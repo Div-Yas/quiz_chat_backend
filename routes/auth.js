@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 router.post('/register', async (req,res) => {
+  console.log("register request", req.body);
+  
   const { name, email, password } = req.body;
   if(!name || !email || !password) return res.status(400).json({ message:'missing fields' });
   try {

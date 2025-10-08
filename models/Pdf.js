@@ -7,6 +7,7 @@ const pdfSchema = new Schema({
   path: String,
   uploader: { type: Schema.Types.ObjectId, ref: 'User' },
   pages: Number,
+  isDefault: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 
