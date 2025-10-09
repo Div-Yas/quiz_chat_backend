@@ -9,6 +9,7 @@ const pdfRoutes = require('./routes/pdfs');
 const chatRoutes = require('./routes/chat');
 const quizRoutes = require('./routes/quiz');
 const dashboardRoutes = require('./routes/dashboard');
+const videoRoutes = require('./routes/videos');
 
 const app = express();
 app.use(cors());
@@ -23,6 +24,7 @@ app.use('/api/pdfs', pdfRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/videos', videoRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

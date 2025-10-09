@@ -9,7 +9,6 @@ module.exports = function authMiddleware(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    console.log("Decoded JWT:", decoded);
     req.userId = decoded.id;
     next();
   } catch (err) {

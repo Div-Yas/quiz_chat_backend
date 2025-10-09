@@ -35,7 +35,7 @@ router.post('/', authMiddleware, upload.single('file'), async (req, res) => {
     const pdf = await Pdf.create({
       filename: req.file.filename,
       originalName: req.file.originalname,
-      path: req.file.path,
+      path: "/uploads/" + req.file.filename,
       uploader: req.userId,
       isDefault: false
     });

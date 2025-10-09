@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Chat = require('../models/Chat');
 const embedder = require('../utils/embedderClient');
-const { generateAIResponse, generateQuizQuestions } = require('../utils/geminiClient');
+const { generateAIResponse } = require('../utils/geminiClient');
 const authMiddleware = require('../middleware/auth');
 const Pdf = require('../models/Pdf');
 
