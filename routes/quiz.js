@@ -6,23 +6,62 @@ const embedder = require('../utils/embedderClient');
 const { generateQuizQuestions } = require('../utils/geminiClient');
 const authMiddleware = require('../middleware/auth');
 
-router.post('/generate', authMiddleware, async (req, res) => {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+router.post("/generate", async (req, res) => {
   try {
-    const { pdfId, count = 5 } = req.body;
-    
-    // Get chunks from selected PDF(s)
-    const chunks = await embedder.getRandomChunks(pdfId || 'all', 10);
-    const context = chunks.map(c => c.text).join('\n\n');
-    
-    // Generate quiz using Gemini
-    const quiz = await generateQuizQuestions(context, count);
-    
-    res.json({ quiz, pdfId });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: 'server error' });
+    const { pdfId, page } = req.body;
+
+    if (!pdfId) {
+      return res.status(400).json({ error: "pdfId is required" });
+    }
+
+    if (!page || typeof page !== "number") {
+      return res.status(400).json({ error: "Page number is required" });
+    }
+
+    // Load PDF file (assumes PDFs are stored in ./uploads)
+    const pdfPath = path.join(process.cwd(), "uploads", `${pdfId}.pdf`);
+    if (!fs.existsSync(pdfPath)) {
+      return res.status(404).json({ error: "PDF not found" });
+    }
+
+    const pdfBuffer = fs.readFileSync(pdfPath);
+    const pdfData = await pdfParse(pdfBuffer);
+
+    // pdfData.text contains all pages text separated by \n
+    const pagesText = pdfData.text.split("\n\n"); // rough page split
+    const pageText = pagesText[page - 1]; // zero-based index
+
+    if (!pageText || pageText.trim().length === 0) {
+      return res.status(400).json({ error: "No content found on this page" });
+    }
+
+    // Generate quiz questions using AI
+    let generatedQuiz = [];
+    try {
+      generatedQuiz = await generateQuizQuestions(pageText);
+      await sleep(1500); // throttle
+    } catch (err) {
+      console.error(`Quiz generation error for page ${page}:`, err.message);
+      return res.status(500).json({ error: err.message });
+    }
+
+    res.json({
+      pdfId,
+      pages: [
+        {
+          page,
+          quiz: generatedQuiz,
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("Quiz route error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
+
 
 router.post('/submit', authMiddleware, async (req, res) => {
   try {

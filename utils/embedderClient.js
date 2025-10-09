@@ -1,12 +1,13 @@
 const axios = require('axios');
+const Pdf = require('../models/Pdf');
 const EMBEDDER_URL = process.env.EMBEDDER_URL || 'http://localhost:5000';
 
-module.exports.query = async function(question, pdfId, top_k = 4) {
+module.exports.query = async function(question, pdfIds, top_k = 4) {
   try {
     const url = `${EMBEDDER_URL}/query`;
     const resp = await axios.post(url, {
       question,
-      pdf_id: pdfId,
+      pdf_ids: pdfIds, // ✅ send as array
       top_k
     }, { timeout: 10000 });
     return resp.data.results || [];
@@ -16,20 +17,37 @@ module.exports.query = async function(question, pdfId, top_k = 4) {
   }
 };
 
-module.exports.getRandomChunks = async function(pdfId, count = 10) {
+module.exports.getRandomChunks = async function(pdfId, countPerPdf = 10) {
   try {
-    const url = `${EMBEDDER_URL}/random_chunks`;
-    const resp = await axios.post(url, {
-      pdf_id: pdfId,
-      count
-    }, { timeout: 10000 });
-    return resp.data.chunks || [];
+    let pdfIds = [];
+    
+    if (pdfId === "all") {
+      // Fetch all PDFs from DB
+      const allPdfs = await Pdf.find({});
+      pdfIds = allPdfs.map(p => p._id.toString());
+    } else {
+      pdfIds = [pdfId];
+    }
+
+    let chunks = [];
+    for (const id of pdfIds) {
+      const url = `${EMBEDDER_URL}/random_chunks`;
+      const resp = await axios.post(url, {
+        pdf_id: id,
+        count: countPerPdf
+      }, { timeout: 10000 });
+
+      chunks.push(...(resp.data.chunks || []));
+    }
+
+    return chunks;
   } catch (error) {
     console.error('Get random chunks error:', error.message);
     // Return mock data if embedder not available
-    return [{
-      text: 'Sample physics content about motion and forces.',
-      metadata: { page: 1, chunk_index: 0 }
-    }];
+    return Array.from({ length: countPerPdf * 5 }, (_, i) => ({
+      text: `Sample content chunk ${i + 1}`,
+      metadata: { page: Math.floor(i / 10) + 1, chunk_index: i }
+    }));
   }
 };
+

@@ -29,18 +29,56 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+const PORT = process.env.PORT || 5001;
 const MONGO = process.env.MONGO_URI || 'mongodb://localhost:27017/beyondchart';
+
+// Connect to MongoDB and start server
 mongoose.connect(MONGO)
-  .then(() => {
-    console.log('MongoDB connected');
-    require('./scripts/seedDefaultPDFs');
+  .then(async () => {
+    console.log('✅ MongoDB connected');
+    
+    // Run seed inline (don't require the external file that calls process.exit)
+    try {
+      const Pdf = require('./models/Pdf');
+      const existingCount = await Pdf.countDocuments({ isDefault: true });
+      console.log(`Default PDF count: ${existingCount}`);
+      
+      if (existingCount >= 3) {
+        console.log('✅ Default PDFs already exist');
+      } else {
+        console.log('⚠️  Default PDFs not seeded. Run: node scripts/seedDefaultPDFs.js');
+      }
+    } catch (err) {
+      console.warn('Seed check failed:', err.message);
+    }
+    
+    // Start the server
+    const server = app.listen(PORT, () => {
+      console.log(`✅ Server running on http://localhost:${PORT}`);
+      console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use`);
+        console.log('Try: taskkill /F /IM node.exe');
+      } else {
+        console.error('❌ Server error:', err);
+      }
+      process.exit(1);
+    });
   })
-  .catch(err => console.error('Mongo connect error', err));
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+    console.log('\nMake sure MongoDB is running!');
+    process.exit(1);
+  });
 
-const PORT = 6000;
-
-const server = app.listen(PORT, () =>
-  console.log(`✅ Server bound successfully on port ${PORT}`)
-);
-
-server.on('error', err => console.error('❌ Listen error', err));
+// Handle graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n👋 Shutting down gracefully...');
+  mongoose.connection.close(() => {
+    console.log('MongoDB connection closed');
+    process.exit(0);
+  });
+});

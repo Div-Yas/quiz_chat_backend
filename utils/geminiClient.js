@@ -1,114 +1,127 @@
-const axios = require('axios');
+// utils/geminiClient.js
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+// Initialize Gemini client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-async function generateAIResponse(question, context) {
-  if (!GEMINI_API_KEY) {
-    console.warn('GEMINI_API_KEY not set, returning demo response');
-    return `Based on the context: "${question}" - This is a demo answer. Please set GEMINI_API_KEY for production use.`;
-  }
+// Select supported model (change via .env if needed)
+export const model = genAI.getGenerativeModel({
+  model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+});
 
-  try {
-    const prompt = `You are a helpful AI teacher assistant. Answer the student's question based on the following context from their coursebook.
+const client = new GoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
+// Generate AI response for a student's question
+export async function generateAIResponse(question, context) {
+  const prompt = `
+You are a helpful AI teacher assistant.
+Answer the student's question clearly using the following context.
 
 Context:
 ${context}
 
-Student Question: ${question}
+Question: ${question}
+If the context lacks enough information, say politely.
+`;
 
-Please provide a clear, educational answer. If the context doesn't contain enough information, say so politely.`;
+  try {
+    const result = await model.generateContent(prompt);
 
-    const response = await axios.post(
-      `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [{ text: prompt }]
-        }]
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 30000
-      }
-    );
+    // ✅ Correctly extract text using .response.text() if available
+    let answer = "";
+    if (typeof result?.response?.text === "function") {
+      // Some versions return a function
+      answer = result.response.text();
+    } else if (typeof result?.response?.text === "string") {
+      answer = result.response.text;
+    } else if (typeof result?.output_text === "string") {
+      answer = result.output_text;
+    } else if (Array.isArray(result?.response?.contents)) {
+      answer = result.response.contents.map(c => c.text || "").join("\n");
+    } else {
+      answer = "";
+    }
 
-    return response.data.candidates[0].content.parts[0].text;
-  } catch (error) {
-    console.error('Gemini API error:', error.response?.data || error.message);
-    return `I apologize, but I'm having trouble processing your question right now. Please try again.`;
+    return answer || "I don't have enough information to answer that.";
+  } catch (err) {
+    console.error("Gemini API error:", err);
+    return "I am having trouble processing your question right now.";
   }
 }
 
-async function generateQuizQuestions(context, count = 5) {
-  if (!GEMINI_API_KEY) {
-    return getDemoQuiz();
+// Generate quiz questions based on content
+export async function generateQuizQuestions(text) {
+  if (typeof text !== "string") {
+    throw new TypeError("Text must be a string for generateQuizQuestions");
   }
 
   try {
-    const prompt = `Based on the following educational content, generate ${count} quiz questions with a mix of:
-- 60% Multiple Choice Questions (MCQ) with 4 options
-- 20% Short Answer Questions (SAQ)
-- 20% Long Answer Questions (LAQ)
+    const prompt = `
+      Generate multiple-choice and short-answer questions from the following text.
+      Include explanation for answers.
 
-Content:
-${context}
+      Text:
+      ${text}
+    `;
 
-Return ONLY a valid JSON array with this exact structure:
-[
-  {
-    "id": "q1",
-    "type": "MCQ",
-    "question": "Question text",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "answer": 0,
-    "explanation": "Explanation text"
-  }
-]
+    const response = await client.generateContent({
+      model: "gemini-2.5-flash",
+      temperature: 0.2,
+      maxOutputTokens: 1000,
+      prompt,
+    });
 
-For SAQ and LAQ, omit the "options" and "answer" fields.`;
+    // Extract content as string
+    const aiText = response?.candidates?.[0]?.content;
 
-    const response = await axios.post(
-      `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [{ text: prompt }]
-        }]
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 30000
-      }
-    );
-
-    const text = response.data.candidates[0].content.parts[0].text;
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    if (!aiText || typeof aiText !== "string") {
+      throw new Error("No valid text returned from Gemini API");
     }
-    return getDemoQuiz();
-  } catch (error) {
-    console.error('Quiz generation error:', error.response?.data || error.message);
-    return getDemoQuiz();
+
+    // Basic parsing logic (adjust to your AI output format)
+    const quizzes = [];
+    const entries = aiText.split("\n\n"); // Split questions by double line break
+
+    for (const entry of entries) {
+      const match = entry.match(/Q\d+: (.+)/i);
+      if (match) {
+        quizzes.push({
+          question: match[1].trim(),
+          type: entry.includes("MCQ") ? "MCQ" : "SAQ",
+          options: entry.includes("MCQ")
+            ? entry.match(/Options: (.+)/i)?.[1].split(",").map((o) => o.trim())
+            : undefined,
+          answer: entry.includes("Answer:") ? entry.match(/Answer: (.+)/i)[1] : undefined,
+          explanation: entry.includes("Explanation:") ? entry.match(/Explanation: (.+)/i)[1] : undefined,
+        });
+      }
+    }
+
+    return quizzes;
+  } catch (err) {
+    console.error("Quiz generation error:", err.message);
+    throw err;
   }
 }
 
+// Demo quiz fallback
 function getDemoQuiz() {
   return [
     {
-      id: 'q1',
-      type: 'MCQ',
-      question: 'What is inertia?',
-      options: ['Resistance to change in motion', 'Force applied', 'Mass of object', 'Acceleration'],
+      id: "q1",
+      type: "MCQ",
+      question: "What is inertia?",
+      options: ["Resistance to change in motion", "Force applied", "Mass of object", "Acceleration"],
       answer: 0,
-      explanation: 'Inertia is the tendency of an object to resist changes in its state of motion.'
+      explanation: "Inertia is the tendency of an object to resist changes in its state of motion."
     },
     {
-      id: 'q2',
-      type: 'SAQ',
-      question: 'Explain Newton\'s First Law of Motion.',
-      explanation: 'An object at rest stays at rest and an object in motion stays in motion unless acted upon by an external force.'
+      id: "q2",
+      type: "SAQ",
+      question: "Explain Newton's First Law of Motion.",
+      explanation: "An object at rest stays at rest and an object in motion stays in motion unless acted upon by an external force."
     }
   ];
 }
-
-module.exports = { generateAIResponse, generateQuizQuestions };
